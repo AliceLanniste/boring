@@ -2,13 +2,37 @@
 from codecs import BOM_UTF8
 from token import *
 
+from collections import namedtuple
 import re
 import token
 
 __all__ = token.__all__ +['detect_encoding', 'tokenize','open']
 
+NL = N_TOKENS + 1
+tok_name[NL] = 'NL'
+ENCODING = N_TOKENS + 2
+tok_name[ENCODING] = 'ENCODING'
+
+
+
 cookie_re = re.compile(r'^[ \t\f]*#.*?coding[:=][ \t]*([-\w.]+)',re.ASCII)
 blank_re = re.compile(br'^[ \t\f]*(?:[#\r\n]|$)',re.ASCII)
+
+# Number
+
+nozerodigit = r'[1-9](?:_?[0-9])*'
+zerodigit = r'0+(?:_?0)*'
+
+def OR(*elements):
+    return '|'.join(elements)
+
+allExgr = OR(nozerodigit,zerodigit)
+
+
+
+def _compile(expr):
+    return re.compile(expr,re.UNICODE)
+
 
 
 def _get_normal_name(orig_enc):
@@ -23,9 +47,11 @@ def _get_normal_name(orig_enc):
     return orig_enc
 
 
-class TokenInfo(object):
-    pass
-
+class TokenInfo(namedtuple('TokenInfo','type string start end line')):
+    def __repr__(self):
+        annotated_type = '%d (%s)' % (self.type, tok_name[self.type])
+        return ('TokenInfo(type=%s, string=%r, start=%r, end=%r, line=%r)' %
+                self._replace(type=annotated_type))
 
 def detect_encoding(readline):
     """
@@ -97,13 +123,32 @@ def tokenize(file):
     encdoing,exline = detect_encoding(readline)
 
 
+# token种类NEWLINE,INDENT,DEDENT,identifier,keywords
 
-def _tokenize(parameter_list):
-    pass
-    
+def _tokenize(line, encoding):
+    lnum = 0
+    numberchars = '0123456789'
 
+    if encoding is not None:
+        if encoding == 'utf-8-sig':
+            encoding = 'utf-8'
+        yield TokenInfo(ENCODING,encoding,(0,0),(0,0),'')
 
+    while true:
+        pos,end = 0,len(line)
+        localline = line
 
-def main():
-    pass
+        lnum += 1
+        while pos < end:
+            # 解析有用的tokens组，过滤无用的
+            # 支持NUmber
+            # 使用正则表达式过滤
+            Prematch = _compile(allExgr).match(localine)
+            if Prematch:
+                start,end =Prematch.span(1)
+                startpos,endpos,pos =(lnum,start),(lnum,endpos),pos
+                token ,initial= line[start:end],line[start]
+                if initial in numberchars:
+                    yield TokenInfo(NUMBER,token, startpos,endpos,localline)
 
+            
