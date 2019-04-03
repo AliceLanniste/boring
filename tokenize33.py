@@ -19,17 +19,12 @@ cookie_re = re.compile(r'^[ \t\f]*#.*?coding[:=][ \t]*([-\w.]+)',re.ASCII)
 blank_re = re.compile(br'^[ \t\f]*(?:[#\r\n]|$)',re.ASCII)
 
 # Number
+Decnumber = r'(?:0(?:_?0)*|[1-9](?:_?[0-9])*)'
+#whitespace
+Whitespace = r'[ \f\t]*'
+NEWLINE = r'\\r?\\n'
 
-nozerodigit = r'[1-9](?:_?[0-9])*'
-zerodigit = r'0+(?:_?0)*'
-
-def OR(*elements):
-    return '|'.join(elements)
-
-allExgr = OR(nozerodigit,zerodigit)
-
-
-
+allToken =Whitespace+'|'+Decnumber+'|'+NEWLINE
 def _compile(expr):
     return re.compile(expr,re.UNICODE)
 
@@ -119,13 +114,16 @@ def detect_encoding(readline):
 
 
 
-def tokenize(file):
-    encdoing,exline = detect_encoding(readline)
+def tokenize(readline):
+    from itertools import chain
+    encdoing,fline = detect_encoding(readline)
+    gen=iter(readline,b'')
+    return _tokenize(chain(fline,gen).__next__, encdoing)
 
 
 # token种类NEWLINE,INDENT,DEDENT,identifier,keywords
 
-def _tokenize(line, encoding):
+def _tokenize(readline, encoding):
     lnum = 0
     numberchars = '0123456789'
 
@@ -134,21 +132,43 @@ def _tokenize(line, encoding):
             encoding = 'utf-8'
         yield TokenInfo(ENCODING,encoding,(0,0),(0,0),'')
 
-    while true:
-        pos,end = 0,len(line)
-        localline = line
+    while True:
+        try:
+            line = readline()
+        except StopIteration:
+            line = b''
+       
+        if encoding is not None:
+            line = line.decode(encoding)
 
-        lnum += 1
+        lnum += 1    
+        pos,end = 0,len(line)
+       
         while pos < end:
             # 解析有用的tokens组，过滤无用的
             # 支持NUmber
             # 使用正则表达式过滤
-            Prematch = _compile(allExgr).match(localine)
+            Prematch = _compile(allToken).match(line,pos)
             if Prematch:
-                start,end =Prematch.span(1)
-                startpos,endpos,pos =(lnum,start),(lnum,endpos),pos
+                start,end =Prematch.span(0)
+                startpos,endpos,pos =(lnum,start),(lnum,end),end
                 token ,initial= line[start:end],line[start]
+                   
                 if initial in numberchars:
-                    yield TokenInfo(NUMBER,token, startpos,endpos,localline)
+                    yield TokenInfo(NUMBER,token, startpos,endpos,line)
+                if initial in '\r\n':
+                    yield(NEWLINE,token,startpos,endpos,line)
 
-            
+        if not line:
+            break
+
+
+
+def main():
+    with open('text.py','rb') as f:
+        tokens = list(tokenize(f.readline))
+    for t in tokens:
+        print(t)
+
+if __name__ == "__main__":
+    main()
