@@ -4,6 +4,7 @@ from token import *
 
 from collections import namedtuple
 import re
+import itertools as _itertools
 import token
 
 __all__ = token.__all__ +['detect_encoding', 'tokenize','open']
@@ -12,19 +13,32 @@ NL = N_TOKENS + 1
 tok_name[NL] = 'NL'
 ENCODING = N_TOKENS + 2
 tok_name[ENCODING] = 'ENCODING'
-
+# tok_name[NEWLINE] ='NEWLINE'
 
 
 cookie_re = re.compile(r'^[ \t\f]*#.*?coding[:=][ \t]*([-\w.]+)',re.ASCII)
 blank_re = re.compile(br'^[ \t\f]*(?:[#\r\n]|$)',re.ASCII)
 
+def group(*choices): return '(' + '|'.join(choices) + ')'
+def any(*choices): return group(*choices) + '*'
+def maybe(*choices): return group(*choices) + '?'
+
+
+
 # Number
 Decnumber = r'(?:0(?:_?0)*|[1-9](?:_?[0-9])*)'
 #whitespace
 Whitespace = r'[ \f\t]*'
-NEWLINE = r'\\r?\\n'
+Ignore =  any(r'\\\r?\n') 
 
-allToken =Whitespace+'|'+Decnumber+'|'+NEWLINE
+#comment
+Comment = r'#[^\r\n]*'
+
+# # allToken =Whitespace+'|'+Decnumber+'|'+Newline
+allToken = group(Decnumber,Comment,Ignore)
+
+
+
 def _compile(expr):
     return re.compile(expr,re.UNICODE)
 
@@ -119,9 +133,21 @@ def tokenize(readline):
     encdoing,fline = detect_encoding(readline)
     gen=iter(readline,b'')
     return _tokenize(chain(fline,gen).__next__, encdoing)
-
+    # return chain(fline).__next__()
 
 # token种类NEWLINE,INDENT,DEDENT,identifier,keywords
+def test_tokenize(readline,encoding):
+    if encoding is not None:
+        if encoding == 'utf-8-sig':
+            encoding = 'utf-8'
+        yield TokenInfo(ENCODING,encoding,(0,0),(0,0),'')
+    
+    while True:
+        line = readline()
+        line=line.decode(encoding)
+        print(line)
+        # print('s')
+
 
 def _tokenize(readline, encoding):
     lnum = 0
@@ -137,35 +163,56 @@ def _tokenize(readline, encoding):
             line = readline()
         except StopIteration:
             line = b''
-       
+      
         if encoding is not None:
             line = line.decode(encoding)
-
+     
         lnum += 1    
-        pos,end = 0,len(line)
+        pos,length = 0,len(line)
        
-        while pos < end:
-            # 解析有用的tokens组，过滤无用的
-            # 支持NUmber
-            # 使用正则表达式过滤
-            Prematch = _compile(allToken).match(line,pos)
-            if Prematch:
-                start,end =Prematch.span(0)
-                startpos,endpos,pos =(lnum,start),(lnum,end),end
-                token ,initial= line[start:end],line[start]
-                   
-                if initial in numberchars:
-                    yield TokenInfo(NUMBER,token, startpos,endpos,line)
-                if initial in '\r\n':
-                    yield(NEWLINE,token,startpos,endpos,line)
+        if line and line[pos] in '#\r\n':
+            if line[pos] == '#':
+                comment_token = line[pos:].rstrip('\r\n')
+                yield TokenInfo(COMMENT,comment_token,(lnum,pos),(lnum,pos+len(comment_token)),line)     
+            pos += len(comment_token)
+            yield TokenInfo(NL,line[pos:],(lnum,pos),(lnum,len(line)),line)
+            continue
 
         if not line:
             break
 
+        while pos < length:
+            # 解析有用的tokens组，过滤无用的
+            # 支持NUmber
+            # 使用正则表达式过滤
+            Prematch = _compile(allToken).match(line,pos)
+         
+            if Prematch:
+                start,end =Prematch.span(1)
+                startpos,endpos,pos =(lnum,start),(lnum,end),end
+                    
+                token ,initial= line[start:end],line[start]
+                if initial in numberchars:
+                   
+                    yield TokenInfo(NUMBER,token, startpos,endpos,line)
+                elif initial in '\r\n':
+                    yield TokenInfo(NEWLINE,token,startpos,endpos,line)
+
+                elif initial.isidentifier():               # ordinary name
+                    yield TokenInfo(NAME, token, startpos,endpos, line)
+
+            else:
+                pos += 1
+           
+
+
+# 1.NEWLINE和NL都是 \r\n或者\n,如何判断
+#comment正则，才能获取comment Token
+# 关键字都是NAME，符号就是OP
 
 
 def main():
-    with open('text.py','rb') as f:
+    with open('some.py','rb') as f:
         tokens = list(tokenize(f.readline))
     for t in tokens:
         print(t)
